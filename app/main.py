@@ -1,15 +1,15 @@
 """Offline-first local API. Does not connect to OKX automatically."""
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 
+from app.config import load_settings
 from app.database import initialize, connect
 
-DB_PATH = Path(os.getenv("DATABASE_PATH", "/opt/okx-monitor/data/monitor.db"))
+SETTINGS = load_settings()
+DB_PATH = SETTINGS.database_path
 
 
 @asynccontextmanager
@@ -20,15 +20,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="OKX Trading Monitor",
-    version="0.1.0",
-    description="Read-only monitoring scaffold; exchange connection is disabled by default.",
+    version="0.2.0",
+    description="Read-only monitoring service; exchange connection requires an explicit operator action.",
     lifespan=lifespan,
 )
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": "offline", "account_connected": False}
+    return {
+        "status": "ok",
+        "mode": SETTINGS.mode,
+        "api_configured": SETTINGS.api_configured,
+        "account_connected": False,
+    }
 
 
 @app.get("/api/status")
@@ -36,7 +41,8 @@ def status():
     return {
         "service": "OKX Monitor",
         "version": app.version,
-        "mode": "offline",
+        "mode": SETTINGS.mode,
+        "api_configured": SETTINGS.api_configured,
         "account_connected": False,
         "trading_enabled": False,
     }
