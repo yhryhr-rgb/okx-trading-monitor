@@ -9,13 +9,15 @@ import base64
 import hashlib
 import hmac
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+
+from app.endpoints import validate_rest_base_url
 
 
 class OKXError(RuntimeError):
@@ -24,9 +26,10 @@ class OKXError(RuntimeError):
 
 @dataclass(frozen=True)
 class OKXCredentials:
-    api_key: str
-    api_secret: str
-    passphrase: str
+    # repr=False prevents accidental credential disclosure in debug logs.
+    api_key: str = field(repr=False)
+    api_secret: str = field(repr=False)
+    passphrase: str = field(repr=False)
 
 
 def utc_timestamp() -> str:
@@ -58,9 +61,7 @@ class ReadOnlyOKXClient:
         requests_per_second: float = 5.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        if not base_url.startswith("https://"):
-            raise ValueError("OKX base URL must use HTTPS")
-        self.base_url = base_url.rstrip("/")
+        self.base_url = validate_rest_base_url(base_url)
         self.credentials = credentials
         self.timeout = timeout
         self.interval = 1.0 / max(requests_per_second, 0.1)
@@ -88,7 +89,7 @@ class ReadOnlyOKXClient:
         params: dict[str, Any] | None = None,
         authenticated: bool = False,
     ) -> dict[str, Any]:
-        if not path.startswith("/api/v5/"):
+        if not path.startswith("/api/v5/") or path.startswith("//"):
             raise ValueError("Only OKX V5 API paths are allowed")
         if self._client is None:
             raise RuntimeError("Use the client as an async context manager")
@@ -124,8 +125,9 @@ class ReadOnlyOKXClient:
 
         if not isinstance(payload, dict) or payload.get("code") != "0":
             code = payload.get("code", "unknown") if isinstance(payload, dict) else "unknown"
-            message = payload.get("msg", "unknown error") if isinstance(payload, dict) else "invalid response"
-            raise OKXError(f"OKX API error {code}: {message}")
+            # Provider error text is deliberately not echoed; it can contain
+            # account-specific values and should not be copied into logs.
+            raise OKXError(f"OKX API error {code}")
 
         return payload
 
