@@ -60,6 +60,8 @@ class PrivateReadOnlyStream:
 
     def __init__(self, config: WSConfig, credentials: OKXCredentials,
                  channels: tuple[dict[str, str], ...] = READ_ONLY_CHANNELS) -> None:
+        if any("channel" not in item for item in channels):
+            raise ValueError("Each subscription must specify a channel")
         self.config = config
         self.credentials = credentials
         self.channels = channels
