@@ -32,7 +32,9 @@ def test_only_read_only_channels_are_subscribed():
 
 def test_rejects_insecure_websocket_url():
     with pytest.raises(ValueError):
-        PrivateReadOnlyStream(
-            WSConfig("ws://example.com/ws/v5/private"),
-            OKXCredentials("key", "secret", "pass"),
-        )
+        WSConfig("ws://ws.okx.com/ws/v5/private")
+
+
+def test_rejects_non_okx_private_websocket_host():
+    with pytest.raises(ValueError):
+        WSConfig("wss://example.com/ws/v5/private")
