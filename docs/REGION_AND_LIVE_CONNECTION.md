@@ -16,7 +16,7 @@ Official documentation:
 - https://www.okx.com/docs-v5/en/
 - https://my.okx.com/docs-v5/en/
 
-The generic "Other" label is not enough to prove which service entity applies. Confirm the actual contracting/service entity shown for the account in the OKX app/account documents or with OKX support before selecting a row. Do not use network routing to evade regional restrictions.
+The generic "Other" label is not enough to prove which service entity applies. OKX support has clarified that the service entity depends on the user's jurisdiction and registration date; Aux Cayes may apply to users outside the listed entities, but the account agreement is authoritative. Support also clarified that the API documentation/domain must match the account's current site. The user has received the Global endpoint information conditionally: **if the account site is confirmed as OKX Global**, use `https://openapi.okx.com` and `wss://ws.okx.com/ws/v5/private`. This support reply does not independently confirm that this particular account is Global or that Aux Cayes is its contracting entity. Confirm the current account site/contracting entity in the app/account agreement or with OKX support before selecting a row. Do not use network routing to evade regional restrictions.
 
 ## Configuration
 
