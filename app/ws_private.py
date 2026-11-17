@@ -17,6 +17,7 @@ from typing import Any, AsyncIterator
 
 import websockets
 
+from app.endpoints import validate_private_ws_url
 from app.okx_client import OKXCredentials
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,9 @@ class WSConfig:
     reconnect_min_seconds: float = 1.0
     reconnect_max_seconds: float = 30.0
 
+    def __post_init__(self) -> None:
+        validate_private_ws_url(self.url)
+
 
 def make_ws_login(credentials: OKXCredentials, epoch_seconds: str | None = None) -> dict[str, Any]:
     timestamp = epoch_seconds or str(int(time.time()))
@@ -56,8 +60,6 @@ class PrivateReadOnlyStream:
 
     def __init__(self, config: WSConfig, credentials: OKXCredentials,
                  channels: tuple[dict[str, str], ...] = READ_ONLY_CHANNELS) -> None:
-        if not config.url.startswith("wss://"):
-            raise ValueError("Private WebSocket URL must use wss://")
         if any("channel" not in item for item in channels):
             raise ValueError("Each subscription must specify a channel")
         self.config = config

@@ -26,9 +26,14 @@ def test_decimal_parser():
 
 def test_rejects_non_https_base_url():
     with pytest.raises(ValueError):
-        ReadOnlyOKXClient("http://example.com")
+        ReadOnlyOKXClient("http://openapi.okx.com")
+
+
+def test_rejects_non_okx_https_host():
+    with pytest.raises(ValueError):
+        ReadOnlyOKXClient("https://example.com")
 
 
 def test_private_client_can_be_constructed_without_credentials():
-    client = ReadOnlyOKXClient("https://example.com")
+    client = ReadOnlyOKXClient("https://openapi.okx.com")
     assert client.credentials is None
