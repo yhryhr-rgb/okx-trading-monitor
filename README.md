@@ -40,6 +40,10 @@ Run the API locally:
 
 The service starts in offline mode unless valid credentials and an explicitly verified base URL are configured. Do not expose port 8765 directly to the public internet.
 
+## Current implementation boundary
+
+The repository contains the initial REST/WS ingestion building blocks and offline tests. It is not yet a fully orchestrated always-on monitor: pagination/reconciliation, durable WebSocket event snapshots, Telegram delivery, dashboard integration, and live end-to-end validation remain future work. Do not interpret the presence of a collector as evidence that a live account is connected.
+
 ## Configuration
 
 Copy \`.env.example\` to a private environment file on the server. Keep that file outside the repository and restrict its permissions (for example, root-owned mode 0640 with the service account granted only the access it needs).
