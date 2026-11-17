@@ -24,7 +24,7 @@ def normalize_fill(fill: dict[str, Any]) -> dict[str, Any]:
 def save_funding_bill(db_path: str, bill: dict[str, Any]) -> bool:
     """Persist funding fee bills only; idempotent by billId + instrument."""
     subtype = str(bill.get("subType", ""))
-    if subtype != "173" and "funding" not in str(bill.get("type", "")).lower():
+    if subtype not in {"173", "174"} and "funding" not in str(bill.get("type", "")).lower():
         return False
     bill_id, inst_id, ts = bill.get("billId"), bill.get("instId") or "ACCOUNT", bill.get("ts")
     if not bill_id or not ts:
@@ -34,7 +34,7 @@ def save_funding_bill(db_path: str, bill: dict[str, Any]) -> bool:
             """INSERT OR IGNORE INTO funding_events
                (bill_id, inst_id, ccy, amount, ts, raw_json)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (str(bill_id), str(inst_id), bill.get("ccy"), bill.get("balChg"),
+            (str(bill_id), str(inst_id), bill.get("ccy"), bill.get("pnl", bill.get("balChg")),
              str(ts), json.dumps(bill, ensure_ascii=False)),
         )
         return cursor.rowcount == 1
