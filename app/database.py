@@ -36,6 +36,16 @@ CREATE TABLE IF NOT EXISTS sync_state (
     updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS funding_events (
+    bill_id TEXT NOT NULL,
+    inst_id TEXT NOT NULL,
+    ccy TEXT,
+    amount TEXT,
+    ts TEXT NOT NULL,
+    raw_json TEXT,
+    PRIMARY KEY(bill_id, inst_id)
+);
+
 CREATE TABLE IF NOT EXISTS ingestion_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
