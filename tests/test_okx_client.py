@@ -6,7 +6,7 @@ import httpx
 
 import pytest
 
-from app.okx_client import ReadOnlyOKXClient, decimal_or_none, make_signature
+from app.okx_client import OKXCredentials, ReadOnlyOKXClient, decimal_or_none, make_signature
 
 
 def test_signature_matches_hmac_sha256():
@@ -53,7 +53,11 @@ async def test_fills_history_requires_inst_type_and_forwards_pagination():
         base_url="https://openapi.okx.com",
         transport=httpx.MockTransport(handler),
     )
-    client = ReadOnlyOKXClient("https://openapi.okx.com", client=raw_client)
+    client = ReadOnlyOKXClient(
+        "https://openapi.okx.com",
+        credentials=OKXCredentials("key", "secret", "passphrase"),
+        client=raw_client,
+    )
 
     async with client:
         await client.fills_history(
@@ -80,7 +84,11 @@ async def test_account_bills_archive_forwards_pagination():
         base_url="https://openapi.okx.com",
         transport=httpx.MockTransport(handler),
     )
-    client = ReadOnlyOKXClient("https://openapi.okx.com", client=raw_client)
+    client = ReadOnlyOKXClient(
+        "https://openapi.okx.com",
+        credentials=OKXCredentials("key", "secret", "passphrase"),
+        client=raw_client,
+    )
 
     async with client:
         await client.account_bills_archive(
