@@ -61,3 +61,8 @@ The staging instance shown in the latest screenshots is separate and runs at `12
 ## Analytics limitations
 
 Performance metrics must be marked incomplete when imported trade/bill history is insufficient. Spot inventory accounting, derivatives contract multipliers, fees, funding, transfers, deposits, withdrawals, and multi-currency conversion must be handled explicitly before presenting a consolidated net PnL. Never infer missing records as zero.
+
+
+## Historical read sync
+
+Historical read synchronization is resumable and read-only. `sync_historical_read_data()` paginates fills and account bills in pages of at most 100 records, persists each completed page before advancing the cursor, and records per-source ingestion runs. If the process stops or an API call fails, the next run resumes from the last committed cursor. Funding-bill backfill uses the documented three-month account-bills archive endpoint; it only stores funding fee expense/income records and never treats missing accounting records as zero.
