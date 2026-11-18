@@ -31,6 +31,27 @@ A self-hosted, read-only monitoring and analytics service for OKX spot and deriv
 - `app/main.py`: local FastAPI health/status and read-only API surface
 - `tests/`: offline unit tests; no real credentials or exchange account access required
 
+## REST rate limiting
+
+Each `ReadOnlyOKXClient` spaces request starts across concurrent callers (5 per
+second by default). Reuse one instance for a collection cycle; this limiter is
+local to that instance and does not coordinate other processes or clients.
+
+HTTP 429 and OKX code `50011` trigger a shared cooldown and up to 3 retries
+(4 attempts total). Backoff starts at 1 second and doubles up to 30 seconds.
+A valid `Retry-After` header, in seconds or HTTP-date form, can extend that wait
+beyond the backoff cap. Every retry is paced and freshly signed. Waiting is
+cancellable, and other HTTP, API, JSON, and transport errors are not retried.
+
+Constructor keyword options `max_retries`, `retry_backoff`, and
+`max_retry_backoff` control this policy; `max_retries=0` disables retries while
+retaining the cooldown for subsequent callers. Rates and backoff values must
+be finite and positive, and the backoff cap must be at least the initial delay.
+The client continues to expose GET requests only.
+
+See [OKX rate limits](https://app.okx.com/docs-v5/en/#overview-rate-limits)
+and [HTTP Retry-After semantics](https://httpwg.org/specs/rfc9110.html#field.retry-after).
+
 ## Local development
 
 Python 3.11+ is recommended.
