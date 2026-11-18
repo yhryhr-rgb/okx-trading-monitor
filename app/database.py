@@ -98,3 +98,75 @@ def upsert_fill(path: str | Path, fill: dict[str, Any]) -> bool:
             values,
         )
         return cursor.rowcount == 1
+
+
+def get_sync_state(path: str | Path, source: str) -> dict[str, Any] | None:
+    with connect(path) as db:
+        row = db.execute(
+            "SELECT source, cursor, last_success_at, last_error, updated_at "
+            "FROM sync_state WHERE source = ?",
+            (source,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_sync_state(
+    path: str | Path,
+    source: str,
+    *,
+    cursor: str | None,
+    last_success_at: str | None,
+    last_error: str | None,
+    updated_at: str,
+) -> None:
+    with connect(path) as db:
+        db.execute(
+            """INSERT INTO sync_state (
+                   source, cursor, last_success_at, last_error, updated_at
+               ) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(source) DO UPDATE SET
+                   cursor = excluded.cursor,
+                   last_success_at = excluded.last_success_at,
+                   last_error = excluded.last_error,
+                   updated_at = excluded.updated_at""",
+            (source, cursor, last_success_at, last_error, updated_at),
+        )
+
+
+def start_ingestion_run(path: str | Path, source: str, started_at: str) -> int:
+    with connect(path) as db:
+        cursor = db.execute(
+            """INSERT INTO ingestion_runs
+               (source, started_at, status)
+               VALUES (?, ?, 'running')""",
+            (source, started_at),
+        )
+        return int(cursor.lastrowid)
+
+
+def finish_ingestion_run(
+    path: str | Path,
+    run_id: int,
+    *,
+    finished_at: str,
+    status: str,
+    records_in: int,
+    records_upserted: int,
+    error_code: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    with connect(path) as db:
+        db.execute(
+            """UPDATE ingestion_runs
+               SET finished_at = ?,
+                   status = ?,
+                   records_in = ?,
+                   records_upserted = ?,
+                   error_code = ?,
+                   error_message = ?
+               WHERE id = ?""",
+            (
+                finished_at, status, records_in, records_upserted,
+                error_code, error_message, run_id,
+            ),
+        )

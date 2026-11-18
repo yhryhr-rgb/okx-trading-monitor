@@ -5,6 +5,7 @@ or account-write methods belong in this module.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -58,7 +59,7 @@ class ReadOnlyOKXClient:
         base_url: str,
         credentials: OKXCredentials | None = None,
         timeout: float = 10.0,
-        requests_per_second: float = 5.0,
+        requests_per_second: float = 2.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.base_url = validate_rest_base_url(base_url)
@@ -66,6 +67,7 @@ class ReadOnlyOKXClient:
         self.timeout = timeout
         self.interval = 1.0 / max(requests_per_second, 0.1)
         self._last_request = 0.0
+        self._rate_lock = asyncio.Lock()
         self._client = client
         self._owns_client = client is None
 
@@ -82,6 +84,13 @@ class ReadOnlyOKXClient:
         if self._owns_client and self._client is not None:
             await self._client.aclose()
             self._client = None
+
+    async def _wait_for_rate_slot(self) -> None:
+        async with self._rate_lock:
+            wait = self.interval - (time.monotonic() - self._last_request)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_request = time.monotonic()
 
     async def get(
         self,
@@ -109,12 +118,7 @@ class ReadOnlyOKXClient:
                 "OK-ACCESS-PASSPHRASE": self.credentials.passphrase,
             }
 
-        wait = self.interval - (time.monotonic() - self._last_request)
-        if wait > 0:
-            import asyncio
-            await asyncio.sleep(wait)
-
-        self._last_request = time.monotonic()
+        await self._wait_for_rate_slot()
         response = await self._client.get(request_path, headers=headers)
         response.raise_for_status()
 
@@ -140,11 +144,83 @@ class ReadOnlyOKXClient:
     async def pending_orders(self, inst_type: str | None = None) -> dict[str, Any]:
         return await self.get("/api/v5/trade/orders-pending", {"instType": inst_type}, authenticated=True)
 
-    async def fills_history(self, inst_type: str | None = None) -> dict[str, Any]:
-        return await self.get("/api/v5/trade/fills-history", {"instType": inst_type}, authenticated=True)
+    async def fills_history(
+        self,
+        inst_type: str,
+        *,
+        inst_id: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Fetch one page of the last-three-month fills history."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if inst_type not in {"SPOT", "MARGIN", "SWAP", "FUTURES", "OPTION", "EVENTS"}:
+            raise ValueError("Unsupported instrument type")
+        return await self.get(
+            "/api/v5/trade/fills-history",
+            {
+                "instType": inst_type,
+                "instId": inst_id,
+                "after": after,
+                "before": before,
+                "limit": limit,
+            },
+            authenticated=True,
+        )
 
-    async def account_bills(self, inst_type: str | None = None) -> dict[str, Any]:
-        return await self.get("/api/v5/account/bills", {"instType": inst_type}, authenticated=True)
+    async def account_bills(
+        self,
+        inst_type: str | None = None,
+        *,
+        after: str | None = None,
+        before: str | None = None,
+        begin: str | None = None,
+        end: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Fetch one page of the last-seven-days account bills."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        return await self.get(
+            "/api/v5/account/bills",
+            {
+                "instType": inst_type,
+                "after": after,
+                "before": before,
+                "begin": begin,
+                "end": end,
+                "limit": limit,
+            },
+            authenticated=True,
+        )
+
+    async def account_bills_archive(
+        self,
+        inst_type: str | None = None,
+        *,
+        after: str | None = None,
+        before: str | None = None,
+        begin: str | None = None,
+        end: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Fetch one page of the last-three-month account bills."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        return await self.get(
+            "/api/v5/account/bills-archive",
+            {
+                "instType": inst_type,
+                "after": after,
+                "before": before,
+                "begin": begin,
+                "end": end,
+                "limit": limit,
+            },
+            authenticated=True,
+        )
 
     async def instruments(self, inst_type: str) -> dict[str, Any]:
         if inst_type not in {"SPOT", "SWAP", "FUTURES", "OPTION"}:
