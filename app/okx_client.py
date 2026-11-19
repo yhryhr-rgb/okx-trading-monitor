@@ -8,10 +8,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import time
+import math
+from asyncio import Lock, sleep
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
+from email.utils import parsedate_to_datetime
+from time import monotonic
 from typing import Any
 from urllib.parse import urlencode
 
@@ -50,8 +53,28 @@ def make_signature(timestamp: str, method: str, request_path: str, secret: str, 
     return base64.b64encode(digest).decode()
 
 
+def _retry_after_seconds(response: httpx.Response) -> float:
+    value = response.headers.get("Retry-After", "").strip()
+    try:
+        if value.isascii() and value.isdigit():
+            delay = float(value)
+        else:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                return 0.0
+            delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+    except (ValueError, TypeError, OverflowError):
+        return 0.0
+    return max(0.0, delay) if math.isfinite(delay) else 0.0
+
+
 class ReadOnlyOKXClient:
-    """GET-only REST client. Credentials are optional for public endpoints."""
+    """GET-only client with per-instance pacing and bounded throttle retries.
+
+    HTTP 429 and OKX 50011 share a cooldown across concurrent callers. Only
+    these rate-limit failures are retried. Retry-After can extend the capped
+    exponential backoff. Credentials are optional for public endpoints.
+    """
 
     def __init__(
         self,
@@ -60,12 +83,31 @@ class ReadOnlyOKXClient:
         timeout: float = 10.0,
         requests_per_second: float = 5.0,
         client: httpx.AsyncClient | None = None,
+        *,
+        max_retries: int = 3,
+        retry_backoff: float = 1.0,
+        max_retry_backoff: float = 30.0,
     ) -> None:
+        if not math.isfinite(requests_per_second) or requests_per_second <= 0:
+            raise ValueError("requests_per_second must be finite and positive")
+        if not math.isfinite(1.0 / requests_per_second):
+            raise ValueError("requests_per_second is too small")
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError("max_retries must be a non-negative integer")
+        if not math.isfinite(retry_backoff) or retry_backoff <= 0:
+            raise ValueError("retry_backoff must be finite and positive")
+        if not math.isfinite(max_retry_backoff) or max_retry_backoff < retry_backoff:
+            raise ValueError("max_retry_backoff must be finite and at least retry_backoff")
         self.base_url = validate_rest_base_url(base_url)
         self.credentials = credentials
         self.timeout = timeout
-        self.interval = 1.0 / max(requests_per_second, 0.1)
-        self._last_request = 0.0
+        self.interval = 1.0 / requests_per_second
+        self.max_retries = max_retries
+        self.retry_backoff = retry_backoff
+        self.max_retry_backoff = max_retry_backoff
+        self._last_request: float | None = None
+        self._cooldown_until = 0.0
+        self._rate_lock = Lock()
         self._client = client
         self._owns_client = client is None
 
@@ -83,6 +125,19 @@ class ReadOnlyOKXClient:
             await self._client.aclose()
             self._client = None
 
+    async def _wait_for_slot(self) -> None:
+        # Serialize reservation of send times, not network I/O. Recheck after
+        # sleep because an in-flight response can extend the shared cooldown.
+        async with self._rate_lock:
+            while True:
+                now = monotonic()
+                next_request = now if self._last_request is None else self._last_request + self.interval
+                wait = max(next_request, self._cooldown_until) - now
+                if wait <= 0:
+                    self._last_request = now
+                    return
+                await sleep(wait)
+
     async def get(
         self,
         path: str,
@@ -96,40 +151,46 @@ class ReadOnlyOKXClient:
 
         query = _canonical_query(params)
         request_path = path + query
-        headers: dict[str, str] = {}
+        if authenticated and self.credentials is None:
+            raise OKXError("Private endpoint requested without credentials")
 
-        if authenticated:
-            if self.credentials is None:
-                raise OKXError("Private endpoint requested without credentials")
-            timestamp = utc_timestamp()
-            headers = {
-                "OK-ACCESS-KEY": self.credentials.api_key,
-                "OK-ACCESS-SIGN": make_signature(timestamp, "GET", request_path, self.credentials.api_secret),
-                "OK-ACCESS-TIMESTAMP": timestamp,
-                "OK-ACCESS-PASSPHRASE": self.credentials.passphrase,
-            }
+        backoff = self.retry_backoff
+        for attempt in range(self.max_retries + 1):
+            await self._wait_for_slot()
+            headers: dict[str, str] = {}
+            if authenticated:
+                # Sign immediately before every send, including retries.
+                timestamp = utc_timestamp()
+                headers = {
+                    "OK-ACCESS-KEY": self.credentials.api_key,
+                    "OK-ACCESS-SIGN": make_signature(timestamp, "GET", request_path, self.credentials.api_secret),
+                    "OK-ACCESS-TIMESTAMP": timestamp,
+                    "OK-ACCESS-PASSPHRASE": self.credentials.passphrase,
+                }
 
-        wait = self.interval - (time.monotonic() - self._last_request)
-        if wait > 0:
-            import asyncio
-            await asyncio.sleep(wait)
+            response = await self._client.get(request_path, headers=headers)
+            if response.status_code != 429:
+                response.raise_for_status()
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise OKXError("OKX returned a non-JSON response") from exc
 
-        self._last_request = time.monotonic()
-        response = await self._client.get(request_path, headers=headers)
-        response.raise_for_status()
+                if isinstance(payload, dict) and payload.get("code") == "0":
+                    return payload
+                code = payload.get("code") if isinstance(payload, dict) else None
+                if code != "50011":
+                    # Only echo a standard numeric code, never provider text.
+                    if not isinstance(code, str) or len(code) != 5 or not code.isascii() or not code.isdigit():
+                        code = "unknown"
+                    raise OKXError(f"OKX API error {code}")
 
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise OKXError("OKX returned a non-JSON response") from exc
-
-        if not isinstance(payload, dict) or payload.get("code") != "0":
-            code = payload.get("code", "unknown") if isinstance(payload, dict) else "unknown"
-            # Provider error text is deliberately not echoed; it can contain
-            # account-specific values and should not be copied into logs.
-            raise OKXError(f"OKX API error {code}")
-
-        return payload
+            delay = max(backoff, _retry_after_seconds(response))
+            # No await between reading and extending this event-loop-local state.
+            self._cooldown_until = max(self._cooldown_until, monotonic() + delay)
+            if attempt == self.max_retries:
+                raise OKXError("OKX rate limit retries exhausted")
+            backoff = min(backoff * 2, self.max_retry_backoff)
 
     async def account_balance(self) -> dict[str, Any]:
         return await self.get("/api/v5/account/balance", authenticated=True)

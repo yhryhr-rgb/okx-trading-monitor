@@ -1,0 +1,10 @@
+[Unit]
+Description=OKX daily position report at 08:00 Beijing time
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 Asia/Shanghai
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

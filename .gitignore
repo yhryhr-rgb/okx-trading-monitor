@@ -7,6 +7,10 @@
 *_secret*
 secrets/
 config/private/
+*.cred
+*.sqlite3-wal
+*.sqlite3-shm
+recipient
 
 # Runtime data and logs
 data/

@@ -5,8 +5,8 @@ A self-hosted, read-only monitoring and analytics service for OKX spot and deriv
 ## Status
 
 - Repository scaffold and V1/V2 ingestion/analytics building blocks are present
-- Environment-backed credentials and strict official endpoint allow-list are available on the `feat/secure-region-config` branch
-- Exchange connection remains disabled until the account's permitted OKX service entity and API host are confirmed
+- The core API supports environment-backed credentials and validates official endpoints
+- The optional VPS position worker supports OKX Global accounts with a verified read-only key
 - Trading actions intentionally unsupported
 - Dashboard should remain bound to `127.0.0.1` and be accessed through SSH tunneling or an authenticated private network
 
@@ -31,6 +31,27 @@ A self-hosted, read-only monitoring and analytics service for OKX spot and deriv
 - `app/main.py`: local FastAPI health/status and read-only API surface
 - `tests/`: offline unit tests; no real credentials or exchange account access required
 
+## REST rate limiting
+
+Each `ReadOnlyOKXClient` spaces request starts across concurrent callers (5 per
+second by default). Reuse one instance for a collection cycle; this limiter is
+local to that instance and does not coordinate other processes or clients.
+
+HTTP 429 and OKX code `50011` trigger a shared cooldown and up to 3 retries
+(4 attempts total). Backoff starts at 1 second and doubles up to 30 seconds.
+A valid `Retry-After` header, in seconds or HTTP-date form, can extend that wait
+beyond the backoff cap. Every retry is paced and freshly signed. Waiting is
+cancellable, and other HTTP, API, JSON, and transport errors are not retried.
+
+Constructor keyword options `max_retries`, `retry_backoff`, and
+`max_retry_backoff` control this policy; `max_retries=0` disables retries while
+retaining the cooldown for subsequent callers. Rates and backoff values must
+be finite and positive, and the backoff cap must be at least the initial delay.
+The client continues to expose GET requests only.
+
+See [OKX rate limits](https://app.okx.com/docs-v5/en/#overview-rate-limits)
+and [HTTP Retry-After semantics](https://httpwg.org/specs/rfc9110.html#field.retry-after).
+
 ## Local development
 
 Python 3.11+ is recommended.
@@ -54,9 +75,12 @@ See [regional endpoint and live-connection gate](docs/REGION_AND_LIVE_CONNECTION
 
 ## VPS deployment notes
 
-The existing deployment described during setup uses Debian 12, Python 3.11, systemd service `okx-monitor`, Uvicorn bound to `127.0.0.1:8765`, and SQLite under `/opt/okx-monitor/data/`.
+The optional systemd services provide two independently installable monitors on Debian 12.
 
-The staging instance shown in the latest screenshots is separate and runs at `127.0.0.1:8766`. This branch does **not** deploy or modify either VPS service. Back up the running application and database before any deployment. Do not change unrelated proxy services or ports.
+- **OKX positions**. A loopback dashboard on port 8766 shows positions, fills and alert history. QQ email alerts trigger at 10 USDT of unrealized profit per position. A separate timer emails a realized and unrealized P&L report at 08:00 Beijing time.
+- **DMIT Los Angeles inventory**. A stock worker checks the VPSDeer public catalog every 30 seconds and emails available plans with official DMIT product links.
+
+Each service takes its own mail credentials in a private VPS terminal. Installation, dashboard access, data sources and verification are documented in the [VPS deployment guide](docs/VPS_MONITORS.md).
 
 ## Analytics limitations
 

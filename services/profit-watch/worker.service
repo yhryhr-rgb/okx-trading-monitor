@@ -1,0 +1,28 @@
+[Unit]
+Description=OKX read-only position monitor and email alerts
+After=network-online.target okx-monitor-rest.service
+Wants=network-online.target
+ConditionPathExists=/etc/okx-profit-watch/private/account
+
+[Service]
+Type=simple
+DynamicUser=yes
+User=okx-monitor-rest
+StateDirectory=okx-monitor-rest
+StateDirectoryMode=0700
+WorkingDirectory=/opt/okx-profit-watch
+Environment=PYTHONPATH=@RELEASE@ PYTHONDONTWRITEBYTECODE=1
+LoadCredentialEncrypted=account:/etc/okx-profit-watch/private/account
+ExecStart=@RELEASE@/venv/bin/python /opt/okx-profit-watch/watch.py
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+PrivateTmp=yes
+UMask=0077
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

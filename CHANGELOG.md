@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Fix REST request pacing for concurrent collection calls and sign requests after waiting.
+- Retry HTTP 429 and OKX 50011 with bounded attempts, capped exponential backoff, and shared Retry-After cooldowns.
+- Add offline regression tests for concurrency, fresh signatures, retry limits, cancellation, safe errors, and collector integration.
+- Keep the REST surface GET-only; no live account access or VPS deployment performed.
+
 ## 0.2.0 - 2026-11-17
 
 - Add read-only private WebSocket login and account/positions/orders/balance-position subscriptions.
