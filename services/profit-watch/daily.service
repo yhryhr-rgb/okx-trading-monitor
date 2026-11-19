@@ -1,0 +1,24 @@
+[Unit]
+Description=OKX daily position P&L email
+After=network-online.target okx-profit-watch.service
+Wants=network-online.target
+ConditionPathExists=/etc/okx-profit-watch/private/account
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+User=okx-monitor-rest
+StateDirectory=okx-monitor-rest
+StateDirectoryMode=0700
+WorkingDirectory=/opt/okx-profit-watch
+Environment=PYTHONPATH=@RELEASE@ PYTHONDONTWRITEBYTECODE=1
+LoadCredentialEncrypted=account:/etc/okx-profit-watch/private/account
+ExecStart=/usr/bin/flock /var/lib/okx-monitor-rest/daily-report.lock @RELEASE@/venv/bin/python /opt/okx-profit-watch/daily.py
+Restart=on-failure
+RestartSec=5min
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+PrivateTmp=yes
+UMask=0077

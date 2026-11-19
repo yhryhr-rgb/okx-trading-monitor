@@ -1,0 +1,23 @@
+[Unit]
+Description=OKX private monitoring dashboard
+After=network.target
+
+[Service]
+DynamicUser=yes
+User=okx-monitor-rest
+WorkingDirectory=@RELEASE@
+ExecStart=@RELEASE@/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8766 --no-access-log
+Environment=DATABASE_PATH=/var/lib/okx-monitor-rest/monitor.db PYTHONDONTWRITEBYTECODE=1
+UnsetEnvironment=OKX_API_KEY OKX_API_SECRET OKX_API_PASSPHRASE OKX_BASE_URL OKX_PRIVATE_WS_URL
+StateDirectory=okx-monitor-rest
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
